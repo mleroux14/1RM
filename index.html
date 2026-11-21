@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Lifts">
+<meta name="theme-color" content="#ffffff">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Lift Tracker</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #111111; --muted: #888888; --line: #e6e6e6;
+    --card: #f3f3f3; --accent: #111111; --accent-fg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000; --fg: #f2f2f2; --muted: #8e8e93; --line: #2a2a2a;
+      --card: #1c1c1e; --accent: #f2f2f2; --accent-fg: #000000;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, system-ui, sans-serif; font-size: 16px; }
+  #app { display: flex; flex-direction: column; height: 100%;
+    padding-top: env(safe-area-inset-top); }
+  main { flex: 1; overflow-y: auto; padding: 20px; -webkit-overflow-scrolling: touch; }
+  h1 { font-size: 28px; margin: 4px 0 16px; }
+  h2 { font-size: 18px; margin: 28px 0 6px; }
+  .muted { color: var(--muted); font-size: 14px; margin: 4px 0; }
+  input, textarea { width: 100%; font-size: 17px; padding: 12px; border: 1px solid var(--line);
+    border-radius: 10px; margin-bottom: 12px; background: var(--bg); color: var(--fg); font-family: inherit; }
+  textarea { height: 100px; }
+  select { width: 100%; font-size: 17px; padding: 12px 40px 12px 12px; border: 1px solid var(--line);
+    border-radius: 10px; margin-bottom: 12px; background-color: var(--bg); color: var(--fg); font-family: inherit;
+    -webkit-appearance: none; appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 20px) 50%, calc(100% - 14px) 50%; background-size: 6px 6px; background-repeat: no-repeat; }
+  label.lbl { display: block; font-size: 14px; color: var(--muted); margin: 0 0 6px; }
+  button { font-family: inherit; cursor: pointer; }
+  .btn { width: 100%; background: var(--accent); color: var(--accent-fg); border: 0;
+    padding: 15px; border-radius: 10px; font-size: 17px; font-weight: 600; margin-bottom: 12px; }
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 12px; }
+  .chips.wrap { flex-wrap: wrap; overflow: visible; }
+  .chip { flex: none; border: 1px solid var(--fg); background: transparent; color: var(--fg);
+    border-radius: 20px; padding: 8px 14px; font-size: 15px; }
+  .chip.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .row { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .row b { font-size: 18px; display: block; margin-bottom: 2px; }
+  .row .del { float: right; border: 0; background: transparent; color: var(--muted); font-size: 14px; padding: 4px 0 4px 12px; }
+  .timer { margin-top: 16px; padding: 16px; border-radius: 14px; background: var(--card); }
+  .timer .time { font-size: 44px; font-weight: 700; text-align: center; margin: 6px 0 10px;
+    font-variant-numeric: tabular-nums; }
+  .timer .chip { background: var(--bg); border-color: transparent; font-weight: 600; }
+  .chart { display: flex; align-items: flex-end; height: 230px; gap: 4px; margin: 16px 0 8px; }
+  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+  .bar { width: 80%; background: var(--accent); border-radius: 4px; }
+  .bar-val { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+  .bar-lbl { font-size: 9px; color: var(--muted); margin-top: 4px; }
+  .banner { background: var(--accent); color: var(--accent-fg); text-align: center; padding: 6px; font-weight: 600; }
+  .toast { position: fixed; left: 16px; right: 16px; top: calc(env(safe-area-inset-top) + 12px);
+    background: var(--accent); color: var(--accent-fg); padding: 14px 16px; border-radius: 12px;
+    font-weight: 600; text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,.25); z-index: 10; }
+  nav { display: flex; border-top: 1px solid var(--line); background: var(--bg);
+    padding: 8px 0 calc(env(safe-area-inset-bottom) + 8px); }
+  nav button { flex: 1; border: 0; background: transparent; color: var(--muted); font-size: 13px; padding: 6px 0; }
+  nav button.on { color: var(--fg); font-weight: 700; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="banner"></div>
+  <main id="main"></main>
+  <nav id="nav"></nav>
+</div>
+<div id="toast" class="toast" style="display:none"></div>
+
+<script>
+// ---------- Storage (all weights saved in pounds) ----------
+const LB_PER_KG = 2.20462;
+const DEFAULT_EXERCISES = ['Squat', 'Bench Press', 'Deadlift', 'Overhead Press', 'Power Clean'];
+
+function loadLifts() {
+  try { return JSON.parse(localStorage.getItem('lifts')) || []; } catch (e) { return []; }
+}
+function saveLifts(lifts) {
+  try { localStorage.setItem('lifts', JSON.stringify(lifts)); } catch (e) { toast('Could not save on this device'); }
+}
+function loadUnit() {
+  try { return localStorage.getItem('unit') === 'kg' ? 'kg' : 'lbs'; } catch (e) { return 'lbs'; }
+}
+function saveUnit(u) { try { localStorage.setItem('unit', u); } catch (e) {} }
+
+function estimate1RM(w, r) { return r <= 1 ? w : w * (1 + r / 30); }
+function toDisplay(lbs, unit) {
+  const v = unit === 'kg' ? lbs / LB_PER_KG : lbs;
+  return Math.round(v * 10) / 10;
+}
+function fromInput(v, unit) { return unit === 'kg' ? v * LB_PER_KG : v; }
+function bestByExercise(lifts) {
+  const best = {};
+  lifts.forEach(l => {
+    const e = estimate1RM(l.weight, l.reps), k = l.exercise.toLowerCase();
+    if (!best[k] || e > best[k].e1rm) best[k] = { name: l.exercise, e1rm: e, weight: l.weight, reps: l.reps };
+  });
+  return best;
+}
+function exerciseNames(lifts) {
+  const names = [...DEFAULT_EXERCISES];
+  lifts.forEach(l => {
+    if (!names.some(n => n.toLowerCase() === l.exercise.toLowerCase())) names.push(l.exercise);
+  });
+  return names;
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function formatTime(secs) { return Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0'); }
+
+// ---------- App state ----------
+const state = {
+  tab: 'Log',
+  unit: loadUnit(),
+  exercise: '',
+  weight: '',
+  progressExercise: null,
+  custom: false,
+  restEnd: null,
+};
+const TABS = ['Log', 'History', 'Records', 'Progress', 'Settings'];
+const main = document.getElementById('main');
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { t.style.display = 'none'; }, 3200);
+}
+
+function renderNav() {
+  document.getElementById('nav').innerHTML = TABS.map(t =>
+    `<button class="${state.tab === t ? 'on' : ''}" data-tab="${t}">${t}</button>`).join('');
+}
+document.getElementById('nav').addEventListener('click', e => {
+  const t = e.target.dataset.tab;
+  if (t) { state.tab = t; render(); }
+});
+
+function chipsHTML(names, selected, action, wrap) {
+  return `<div class="chips${wrap ? ' wrap' : ''}">` + names.map(n => {
+    const on = selected && selected.toLowerCase() === n.toLowerCase();
+    return `<button class="chip${on ? ' on' : ''}" data-${action}="${esc(n)}">${esc(n)}</button>`;
+  }).join('') + '</div>';
+}
+
+function selectHTML(id, names, selected, extraOption) {
+  return `<select id="${id}">` + names.map(n => {
+    const on = selected && selected.toLowerCase() === n.toLowerCase();
+    return `<option value="${esc(n)}"${on ? ' selected' : ''}>${esc(n)}</option>`;
+  }).join('') + (extraOption || '') + '</select>';
+}
+
+// ---------- Screens ----------
+function renderLog() {
+  const u = state.unit;
+  const names = exerciseNames(loadLifts());
+  if (!state.custom && !names.some(n => n.toLowerCase() === (state.exercise || '').toLowerCase())) state.exercise = names[0];
+  main.innerHTML = `
+    <h1>Log a lift</h1>
+    <label class="lbl" for="exSel">Exercise</label>
+    ${selectHTML('exSel', names, state.custom ? null : state.exercise,
+      `<option value="__new"${state.custom ? ' selected' : ''}>+ Add a new exercise…</option>`)}
+    ${state.custom ? `<input id="ex" placeholder="New exercise name" value="${esc(state.exercise)}" autocomplete="off">` : ''}
+    <input id="wt" placeholder="Weight (${u})" inputmode="decimal" value="${esc(state.weight)}">
+    <input id="rp" placeholder="Reps" inputmode="numeric">
+    <button class="btn" id="save">Save lift</button>
+    <div class="timer">
+      <b>Rest timer</b>
+      <div class="time" id="rtime">${restLeft() > 0 ? formatTime(restLeft()) : 'Ready'}</div>
+      <div class="chips wrap">
+        ${[60, 90, 120, 180].map(t => `<button class="chip" data-rest="${t}">${t < 120 ? t + 's' : t / 60 + 'm'}</button>`).join('')}
+        <button class="chip" data-rest="0">Stop</button>
+      </div>
+    </div>`;
+  const sel = document.getElementById('exSel'), ex = document.getElementById('ex'), wt = document.getElementById('wt');
+  sel.onchange = () => {
+    if (sel.value === '__new') { state.custom = true; state.exercise = ''; render(); document.getElementById('ex').focus(); }
+    else { state.custom = false; state.exercise = sel.value; }
+  };
+  if (ex) ex.oninput = () => { state.exercise = ex.value; };
+  wt.oninput = () => { state.weight = wt.value; };
+  document.getElementById('save').onclick = saveLift;
+}
+
+function saveLift() {
+  const name = (state.custom ? document.getElementById('ex').value : document.getElementById('exSel').value).trim();
+  const w = parseFloat(document.getElementById('wt').value);
+  const r = parseInt(document.getElementById('rp').value, 10);
+  if (!name || !w || !r) { toast('Pick an exercise and enter weight and reps'); return; }
+  const lifts = loadLifts();
+  const before = bestByExercise(lifts)[name.toLowerCase()];
+  const lbs = fromInput(w, state.unit);
+  const e1rm = estimate1RM(lbs, r);
+  lifts.unshift({ exercise: name, weight: lbs, reps: r, date: new Date().toISOString(), id: Date.now().toString() });
+  saveLifts(lifts);
+  state.exercise = name;
+  state.custom = false;
+  state.weight = String(w);
+  document.activeElement && document.activeElement.blur();
+  render();
+  if (before && e1rm > before.e1rm + 0.01) {
+    toast(`🎉 New PR! ${name}: est. max ${toDisplay(e1rm, state.unit)} ${state.unit} (was ${toDisplay(before.e1rm, state.unit)})`);
+  } else {
+    toast(`Saved: ${name} ${w} ${state.unit} × ${r}`);
+  }
+}
+
+function renderHistory() {
+  const u = state.unit, lifts = loadLifts();
+  main.innerHTML = `<h1>History</h1>` + (lifts.length ? lifts.map(l => `
+    <div class="row">
+      <button class="del" data-del="${esc(l.id)}">Delete</button>
+      <b>${esc(l.exercise)}</b>
+      ${toDisplay(l.weight, u)} ${u} × ${l.reps} (est. max ${toDisplay(estimate1RM(l.weight, l.reps), u)})
+      <div class="muted">${new Date(l.date).toLocaleDateString()}</div>
+    </div>`).join('') : `<p class="muted">No lifts logged yet.</p>`);
+}
+
+function renderRecords() {
+  const u = state.unit;
+  const recs = Object.values(bestByExercise(loadLifts())).sort((a, b) => b.e1rm - a.e1rm);
+  main.innerHTML = `<h1>Personal records</h1>` + (recs.length ? recs.map(r => `
+    <div class="row">
+      <b>${esc(r.name)}</b>
+      Est. max: ${toDisplay(r.e1rm, u)} ${u}
+      <div class="muted">Best set: ${toDisplay(r.weight, u)} ${u} × ${r.reps}</div>
+    </div>`).join('') : `<p class="muted">Log a lift to see your records.</p>`);
+}
+
+function renderProgress() {
+  const u = state.unit, lifts = loadLifts();
+  const names = exerciseNames(lifts).filter(n => lifts.some(l => l.exercise.toLowerCase() === n.toLowerCase()));
+  if (!names.length) { main.innerHTML = `<h1>Progress</h1><p class="muted">Log a lift to see your progress.</p>`; return; }
+  if (!state.progressExercise || !names.some(n => n.toLowerCase() === state.progressExercise.toLowerCase())) {
+    state.progressExercise = lifts[0].exercise;
+  }
+  const byDay = {};
+  lifts.filter(l => l.exercise.toLowerCase() === state.progressExercise.toLowerCase()).forEach(l => {
+    const d = new Date(l.date), k = d.toDateString(), e = estimate1RM(l.weight, l.reps);
+    if (!byDay[k] || e > byDay[k].e) byDay[k] = { e, t: d.getTime(), label: (d.getMonth() + 1) + '/' + d.getDate() };
+  });
+  const pts = Object.values(byDay).sort((a, b) => a.t - b.t).slice(-12);
+  const max = Math.max(...pts.map(p => p.e)), min = Math.min(...pts.map(p => p.e)), floor = min * 0.8;
+  const h = p => 20 + ((p.e - floor) / ((max - floor) || 1)) * 160;
+  const change = pts.length > 1 ? pts[pts.length - 1].e - pts[0].e : 0;
+  main.innerHTML = `
+    <h1>Progress</h1>
+    <label class="lbl" for="progSel">Exercise</label>
+    ${selectHTML('progSel', names, state.progressExercise)}
+    <p class="muted">Best estimated max per session (last 12)</p>
+    <div class="chart">${pts.map(p => `
+      <div class="bar-col">
+        <div class="bar-val">${Math.round(toDisplay(p.e, u))}</div>
+        <div class="bar" style="height:${h(p)}px"></div>
+        <div class="bar-lbl">${p.label}</div>
+      </div>`).join('')}</div>
+    ${pts.length > 1 ? `<h2>${change >= 0 ? 'Up' : 'Down'} ${Math.abs(toDisplay(change, u))} ${u} since ${pts[0].label}</h2>` : ''}`;
+  document.getElementById('progSel').onchange = e => { state.progressExercise = e.target.value; render(); };
+}
+
+function renderSettings() {
+  const count = loadLifts().length;
+  main.innerHTML = `
+    <h1>Settings</h1>
+    <h2>Units</h2>
+    <div class="chips wrap">
+      ${['lbs', 'kg'].map(x => `<button class="chip${state.unit === x ? ' on' : ''}" data-unit="${x}">${x}</button>`).join('')}
+    </div>
+    <h2>Backup (${count} lifts saved)</h2>
+    <p class="muted">Save the backup text to Notes, or email it to yourself.</p>
+    <button class="btn" id="backup" style="margin-top:10px">Back up my data</button>
+    <h2>Restore</h2>
+    <p class="muted">Paste a backup here, including one from the Expo version. This adds lifts and never deletes any.</p>
+    <textarea id="restoreText" placeholder="Paste backup here" style="margin-top:10px"></textarea>
+    <button class="btn" id="restore">Restore from backup</button>`;
+  document.getElementById('backup').onclick = backup;
+  document.getElementById('restore').onclick = restore;
+}
+
+async function backup() {
+  const lifts = loadLifts();
+  if (!lifts.length) { toast('Nothing to back up yet'); return; }
+  const text = JSON.stringify(lifts);
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Lift Tracker backup', text }); return; }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(text); toast('Backup copied. Paste it into Notes.'); }
+  catch (e) {
+    const ta = document.getElementById('restoreText');
+    ta.value = text; ta.select();
+    toast('Backup is in the box below. Copy it into Notes.');
+  }
+}
+
+function restore() {
+  const raw = document.getElementById('restoreText').value.trim();
+  try {
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data)) throw new Error();
+    const current = loadLifts(), ids = new Set(current.map(l => l.id));
+    const incoming = data
+      .filter(l => l && l.exercise && typeof l.weight === 'number' && typeof l.reps === 'number' && l.date)
+      .map((l, i) => ({ exercise: String(l.exercise), weight: l.weight, reps: l.reps, date: l.date, id: String(l.id || Date.now() + i) }))
+      .filter(l => !ids.has(l.id));
+    saveLifts([...current, ...incoming].sort((a, b) => new Date(b.date) - new Date(a.date)));
+    render();
+    toast(`Restored: ${incoming.length} lifts added`);
+  } catch (e) {
+    toast('Could not restore. Make sure you pasted the whole backup.');
+  }
+}
+
+// ---------- Rest timer ----------
+let audioCtx = null;
+function restLeft() { return state.restEnd ? Math.max(0, Math.ceil((state.restEnd - Date.now()) / 1000)) : 0; }
+function beep() {
+  if (!audioCtx) return;
+  [0, 0.35, 0.7].forEach(t => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(0.3, audioCtx.currentTime + t);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + t + 0.25);
+    o.start(audioCtx.currentTime + t); o.stop(audioCtx.currentTime + t + 0.25);
+  });
+}
+function startRest(secs) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx.resume();
+  } catch (e) {}
+  state.restEnd = secs ? Date.now() + secs * 1000 : null;
+  tick();
+}
+function tick() {
+  const left = restLeft();
+  if (state.restEnd && left === 0) {
+    state.restEnd = null;
+    beep();
+    if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
+    toast('Rest over. Time for your next set!');
+  }
+  const el = document.getElementById('rtime');
+  if (el) el.textContent = restLeft() > 0 ? formatTime(restLeft()) : 'Ready';
+  document.getElementById('banner').innerHTML =
+    restLeft() > 0 && state.tab !== 'Log' ? `<div class="banner">Rest: ${formatTime(restLeft())}</div>` : '';
+}
+setInterval(tick, 500);
+
+// ---------- Taps ----------
+main.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.pick !== undefined) { state.exercise = b.dataset.pick; render(); }
+  else if (b.dataset.prog !== undefined) { state.progressExercise = b.dataset.prog; render(); }
+  else if (b.dataset.rest !== undefined) { startRest(parseInt(b.dataset.rest, 10)); }
+  else if (b.dataset.unit) { state.unit = b.dataset.unit; saveUnit(state.unit); state.weight = ''; render(); }
+  else if (b.dataset.del) {
+    if (confirm('Delete this lift?')) { saveLifts(loadLifts().filter(l => l.id !== b.dataset.del)); render(); }
+  }
+});
+
+function render() {
+  renderNav();
+  ({ Log: renderLog, History: renderHistory, Records: renderRecords, Progress: renderProgress, Settings: renderSettings })[state.tab]();
+  tick();
+}
+render();
+
+// ---------- Offline support ----------
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+}
+if (navigator.storage && navigator.storage.persist) { navigator.storage.persist().catch(() => {}); }
+</script>
+</body>
+</html>
